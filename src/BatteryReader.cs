@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.RegularExpressions;
 
 namespace MouseBat;
@@ -12,27 +11,17 @@ public static partial class BatteryReader
     private const ushort LogitechVendorId = 0x046D;
     private const ushort HidppUsagePage = 0xFF00, ShortUsage = 0x0001, LongUsage = 0x0002;
 
-    private const ushort FeatureDeviceName = 0x0005, FeatureBatteryVoltage = 0x1001;
-    private const string ExpectedNameFragment = "G502";
-
-    // 1-6 are receiver pairing slots (7 is the POWERPLAY mat, which has no battery).
-    // 0xFF addresses a device directly, for when the mouse is plugged in by cable.
-    private static readonly byte[] DeviceSlots = [1, 2, 3, 4, 5, 6, 0xFF];
-
     public static async Task<BatteryReading> ReadAsync()
     {
-        var receivers = FindHidppDevices();
-        if (receivers.Count == 0) return new BatteryReading(ReadStatus.NoReceiver);
+        var devices = FindHidppDevices();
+        if (devices.Count == 0) return new BatteryReading(ReadStatus.NoReceiver);
 
-        foreach (var (longInterface, shortInterface) in receivers)
+        foreach (var (longInterface, shortInterface) in devices)
         {
             try
             {
                 using var channel = new HidppChannel(longInterface, shortInterface);
-                foreach (byte slot in DeviceSlots)
-                {
-                    if (await TryReadSlotAsync(channel, slot) is { } reading) return reading;
-                }
+                if (await HidppMouse.ReadFirstAsync(channel) is { } reading) return reading;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -40,46 +29,6 @@ public static partial class BatteryReader
             }
         }
         return new BatteryReading(ReadStatus.MouseUnreachable);
-    }
-
-    private static async Task<BatteryReading?> TryReadSlotAsync(HidppChannel channel, byte slot)
-    {
-        if (await FindFeatureAsync(channel, slot, FeatureBatteryVoltage) is not { } batteryFeature) return null;
-
-        // Other Logitech devices can report voltage too, so confirm this one is the mouse.
-        var name = await ReadDeviceNameAsync(channel, slot);
-        if (name == null || !name.Contains(ExpectedNameFragment, StringComparison.OrdinalIgnoreCase)) return null;
-
-        var battery = await channel.CallAsync(slot, batteryFeature, function: 0);
-        if (battery == null) return null;
-
-        int millivolts = (battery[0] << 8) | battery[1];
-        bool charging = (battery[2] & 0x80) != 0;
-        return new BatteryReading(ReadStatus.Ok, millivolts, charging);
-    }
-
-    private static async Task<byte?> FindFeatureAsync(HidppChannel channel, byte slot, ushort featureId)
-    {
-        // The Root feature is always index 0; function 0 maps a feature ID to its index.
-        var result = await channel.CallAsync(slot, 0x00, function: 0, (byte)(featureId >> 8), (byte)featureId);
-        return result == null || result[0] == 0 ? null : result[0];
-    }
-
-    private static async Task<string?> ReadDeviceNameAsync(HidppChannel channel, byte slot)
-    {
-        if (await FindFeatureAsync(channel, slot, FeatureDeviceName) is not { } feature) return null;
-
-        var length = await channel.CallAsync(slot, feature, function: 0);
-        if (length == null) return null;
-
-        var name = new StringBuilder();
-        while (name.Length < length[0])
-        {
-            var chunk = await channel.CallAsync(slot, feature, function: 1, (byte)name.Length);
-            if (chunk == null) return null;
-            name.Append(Encoding.ASCII.GetString(chunk, 0, Math.Min(chunk.Length, length[0] - name.Length)));
-        }
-        return name.ToString();
     }
 
     private static List<(HidInterface Long, HidInterface? Short)> FindHidppDevices()
@@ -106,7 +55,7 @@ public static partial class BatteryReader
 /// replies can come back on either collection: receivers send "no such device" errors on the
 /// short one, so both must be read.
 /// </summary>
-internal sealed class HidppChannel : IDisposable
+internal sealed class HidppChannel : IHidppChannel, IDisposable
 {
     private const byte LongReportId = 0x11;
     private const byte Hidpp10Error = 0x8F, Hidpp20Error = 0xFF;
@@ -130,7 +79,6 @@ internal sealed class HidppChannel : IDisposable
         }
     }
 
-    /// <summary>Returns the response parameters, or null on an error reply or timeout.</summary>
     public async Task<byte[]?> CallAsync(byte device, byte feature, byte function, params byte[] parameters)
     {
         byte functionAndId = (byte)((function << 4) | SoftwareId);
