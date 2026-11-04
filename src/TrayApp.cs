@@ -4,11 +4,11 @@ namespace MouseBat;
 
 public sealed class TrayApp : ApplicationContext
 {
-    private const string MouseName = "G502 LIGHTSPEED";
+    private const int MaxTooltipLength = 127; // NotifyIcon throws above this.
     private static readonly int[] ThresholdChoices = [10, 15, 20, 25, 30];
 
     private readonly Settings _settings = Settings.Load();
-    private readonly VoltageSmoother _smoother = new();
+    private VoltageSmoother _smoother = new();
     private readonly LowBatteryAlert _alert;
     private readonly FloatingWidget _widget;
 
@@ -17,8 +17,9 @@ public sealed class TrayApp : ApplicationContext
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 60_000 };
 
     private ReadStatus _status = ReadStatus.NoReceiver;
+    private string _mouseName = "Mouse";
     private int? _percent;
-    private int _millivolts;
+    private int? _millivolts;
     private bool _charging;
     private DateTime _lastSuccess;
     private bool _polling;
@@ -106,11 +107,19 @@ public sealed class TrayApp : ApplicationContext
 
             if (reading.Status == ReadStatus.Ok)
             {
-                _millivolts = _smoother.Add(reading.Millivolts, reading.Charging);
-                _percent = BatteryCurve.ToPercent(_millivolts);
+                if (reading.DeviceName is { } name && name != _mouseName)
+                {
+                    // A different mouse answered, so readings and alerts so far don't apply.
+                    _mouseName = name;
+                    _smoother = new VoltageSmoother();
+                    _alert.SetThreshold(_settings.LowThreshold);
+                }
+
+                _millivolts = reading.Millivolts is { } mv ? _smoother.Add(mv, reading.Charging) : null;
+                _percent = _millivolts is { } smoothed ? BatteryCurve.ToPercent(smoothed) : reading.Percent;
                 _charging = reading.Charging;
                 _lastSuccess = DateTime.Now;
-                NotifyIfLow(_percent.Value);
+                if (_percent is { } percent) NotifyIfLow(percent);
             }
             UpdateTray();
         }
@@ -125,10 +134,10 @@ public sealed class TrayApp : ApplicationContext
         switch (_alert.Evaluate(percent, _charging))
         {
             case AlertLevel.Low:
-                _tray.ShowBalloonTip(10_000, "Mouse battery low", $"{MouseName} is at {percent}%.", ToolTipIcon.Warning);
+                _tray.ShowBalloonTip(10_000, "Mouse battery low", $"{_mouseName} is at {percent}%.", ToolTipIcon.Warning);
                 break;
             case AlertLevel.Critical:
-                _tray.ShowBalloonTip(10_000, "Mouse battery critical", $"{MouseName} is at {percent}%. Charge it soon.", ToolTipIcon.Error);
+                _tray.ShowBalloonTip(10_000, "Mouse battery critical", $"{_mouseName} is at {percent}%. Charge it soon.", ToolTipIcon.Error);
                 break;
         }
     }
@@ -137,7 +146,8 @@ public sealed class TrayApp : ApplicationContext
     {
         string status = Describe();
         _statusItem.Text = status;
-        _tray.Text = $"{MouseName}\n{status}";
+        string tooltip = $"{_mouseName}\n{status}";
+        _tray.Text = tooltip.Length > MaxTooltipLength ? tooltip[..MaxTooltipLength] : tooltip;
 
         var icon = TrayIconRenderer.Render(IconText(), CurrentTone(), IsTaskbarLight(), SystemInformation.SmallIconSize.Width);
         _tray.Icon = icon;
@@ -159,10 +169,10 @@ public sealed class TrayApp : ApplicationContext
 
     private string Describe() => _status switch
     {
-        ReadStatus.Ok => $"{_percent}% ({_millivolts / 1000.0:0.00} V){(_charging ? ", charging" : "")}",
+        ReadStatus.Ok => $"{_percent}%{(_millivolts is { } mv ? $" ({mv / 1000.0:0.00} V)" : "")}{(_charging ? ", charging" : "")}",
         _ when _percent != null => $"Asleep or off. Last {_percent}% at {_lastSuccess:t}",
-        ReadStatus.MouseUnreachable => "Asleep or off. Move the mouse to wake it.",
-        _ => "Receiver not found",
+        ReadStatus.MouseUnreachable => "No mouse responding. Move it to wake it, or check it's supported.",
+        _ => "No Logitech receiver or wired mouse found",
     };
 
     private static bool IsTaskbarLight()
