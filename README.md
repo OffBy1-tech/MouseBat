@@ -119,3 +119,12 @@ publishes a GitHub release with the exe and its checksum:
 git tag v1.2.3
 git push origin v1.2.3
 ```
+
+## License
+
+MouseBat is released under the [BSD Zero Clause License](LICENSE) (0BSD).
+
+The discharge curve values in `src/Battery.cs` come from
+[Solaar](https://github.com/pwr-Solaar/Solaar), which is licensed under GPL-2.0-or-later.
+MouseBat's license doesn't change the terms of anything taken from Solaar, so check those terms
+if they matter for how you use this code.
