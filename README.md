@@ -49,8 +49,19 @@ receiver slot. You can't currently choose between them.
 2. Download `MouseBat.exe` from the [latest release](https://github.com/OffBy1-tech/MouseBat/releases/latest).
 3. Run it. There's no installer.
 
-The exe isn't code-signed, so Windows SmartScreen may warn you the first time. Each release also
-includes a SHA-256 checksum so you can verify the download.
+The exe is new and isn't code-signed, so Windows SmartScreen may warn you the first time, and
+some antivirus tools may flag or block the download. Bitdefender, for example, has shown
+"Dangerous page blocked" for it. Whether to continue is your call. If you do, check the file
+before running it:
+
+```powershell
+(Get-FileHash MouseBat.exe).Hash
+```
+
+The result should match the SHA-256 in that release's `MouseBat.exe.sha256` file, ignoring upper
+and lower case. Don't run the exe if it doesn't match. A match shows the file is the one published
+in the release, not that the release is free of problems. You can read the source or build it
+yourself if you'd rather not rely on the published exe.
 
 If "Start with Windows" is on, it points at the exe's current location, so turn it off and on
 again after moving the exe.
