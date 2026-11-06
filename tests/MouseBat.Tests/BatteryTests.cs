@@ -74,6 +74,19 @@ public class BatteryDecoderTests
         Assert.True(BatteryDecoder.BatteryVoltage([0x0F, 0xE9, 0x80])!.Charging);
 
     [Fact]
+    public void ChargingVoltageGivesNoPercent()
+    {
+        // Captured from a G502 Lightspeed on its cable: 4086 mV, while G HUB showed 43%.
+        var sample = BatteryDecoder.BatteryVoltage([0x0F, 0xF6, 0x80])!;
+        Assert.Null(sample.Percent);
+        Assert.Equal(4086, sample.Millivolts);
+    }
+
+    [Fact]
+    public void ChargingAdcGivesNoPercent() =>
+        Assert.Null(BatteryDecoder.AdcMeasurement([0x0F, 0xF6, 0x03])!.Percent);
+
+    [Fact]
     public void ZeroVoltageIsUnusableRatherThanEmpty() =>
         Assert.Null(BatteryDecoder.BatteryVoltage([0, 0, 0]));
 
@@ -164,6 +177,15 @@ public class LowBatteryAlertTests
         var alert = new LowBatteryAlert(20);
         Assert.Equal(AlertLevel.Critical, alert.Evaluate(9, false));
         Assert.Equal(AlertLevel.None, alert.Evaluate(9, true));
+        Assert.Equal(AlertLevel.Critical, alert.Evaluate(9, false));
+    }
+
+    [Fact]
+    public void ChargingWithNoLevelStillRearms()
+    {
+        var alert = new LowBatteryAlert(20);
+        Assert.Equal(AlertLevel.Critical, alert.Evaluate(9, false));
+        Assert.Equal(AlertLevel.None, alert.Evaluate(null, true));
         Assert.Equal(AlertLevel.Critical, alert.Evaluate(9, false));
     }
 

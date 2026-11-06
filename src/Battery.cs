@@ -16,8 +16,11 @@ public sealed record BatteryReading(
     int? Millivolts = null,
     bool Charging = false);
 
-/// <summary>A decoded battery report. Millivolts is set only for mice that report a voltage.</summary>
-public sealed record BatterySample(int Percent, bool Charging, int? Millivolts = null);
+/// <summary>
+/// A decoded battery report. Millivolts is set only for mice that report a voltage. Percent is
+/// null when a level can't be known: a mouse that only reports voltage, while it's charging.
+/// </summary>
+public sealed record BatterySample(int? Percent, bool Charging, int? Millivolts = null);
 
 /// <summary>Decodes the HID++ 2.0 battery features. Each returns null if the report is unusable.</summary>
 public static class BatteryDecoder
@@ -72,8 +75,9 @@ public static class BatteryDecoder
         return FromVoltage((report[0] << 8) | report[1], (report[2] & 0x02) != 0);
     }
 
+    // The charger holds the voltage up, so a discharge curve reads far too high while plugged in.
     private static BatterySample? FromVoltage(int millivolts, bool charging) =>
-        millivolts == 0 ? null : new BatterySample(BatteryCurve.ToPercent(millivolts), charging, millivolts);
+        millivolts == 0 ? null : new BatterySample(charging ? null : BatteryCurve.ToPercent(millivolts), charging, millivolts);
 
     private static bool IsCharging(byte status) => status is Recharging or AlmostFull or Full or SlowRecharge;
 }
@@ -151,13 +155,14 @@ public sealed class LowBatteryAlert(int lowThreshold)
         _lowSent = _criticalSent = false;
     }
 
-    public AlertLevel Evaluate(int percent, bool charging)
+    public AlertLevel Evaluate(int? level, bool charging)
     {
         if (charging)
         {
             _lowSent = _criticalSent = false;
             return AlertLevel.None;
         }
+        if (level is not { } percent) return AlertLevel.None;
 
         if (percent >= _low + RearmMargin) _lowSent = false;
         if (percent >= Critical + RearmMargin) _criticalSent = false;

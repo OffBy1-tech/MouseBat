@@ -116,10 +116,10 @@ public sealed class TrayApp : ApplicationContext
                 }
 
                 _millivolts = reading.Millivolts is { } mv ? _smoother.Add(mv, reading.Charging) : null;
-                _percent = _millivolts is { } smoothed ? BatteryCurve.ToPercent(smoothed) : reading.Percent;
+                _percent = reading.Percent != null && _millivolts is { } smoothed ? BatteryCurve.ToPercent(smoothed) : reading.Percent;
                 _charging = reading.Charging;
                 _lastSuccess = DateTime.Now;
-                if (_percent is { } percent) NotifyIfLow(percent);
+                NotifyIfLow(_percent);
             }
             UpdateTray();
         }
@@ -129,7 +129,7 @@ public sealed class TrayApp : ApplicationContext
         }
     }
 
-    private void NotifyIfLow(int percent)
+    private void NotifyIfLow(int? percent)
     {
         switch (_alert.Evaluate(percent, _charging))
         {
@@ -154,22 +154,28 @@ public sealed class TrayApp : ApplicationContext
         _currentIcon?.Dispose();
         _currentIcon = icon;
 
-        _widget.UpdateReading(_percent is { } percent ? $"{percent}%" : "--", _percent, CurrentTone(), IsTaskbarLight(), status);
+        _widget.UpdateReading(WidgetText(), _percent, CurrentTone(), IsTaskbarLight(), status);
     }
 
-    private string IconText() => _percent?.ToString() ?? "?";
+    private bool ChargingWithoutLevel => _status == ReadStatus.Ok && _charging && _percent == null;
+
+    private string IconText() => _percent?.ToString() ?? (ChargingWithoutLevel ? "+" : "?");
+
+    private string WidgetText() => _percent is { } percent ? $"{percent}%" : ChargingWithoutLevel ? "CHG" : "--";
 
     private IconTone CurrentTone()
     {
-        if (_status != ReadStatus.Ok || _percent is not { } percent) return IconTone.Stale;
+        if (_status != ReadStatus.Ok) return IconTone.Stale;
         if (_charging) return IconTone.Charging;
+        if (_percent is not { } percent) return IconTone.Stale;
         if (percent <= _settings.LowThreshold / 2) return IconTone.Critical;
         return percent <= _settings.LowThreshold ? IconTone.Low : IconTone.Normal;
     }
 
     private string Describe() => _status switch
     {
-        ReadStatus.Ok => $"{_percent}%{(_millivolts is { } mv ? $" ({mv / 1000.0:0.00} V)" : "")}{(_charging ? ", charging" : "")}",
+        _ when ChargingWithoutLevel => "Charging. Battery level shows once unplugged.",
+        ReadStatus.Ok =>$"{_percent}%{(_millivolts is { } mv ? $" ({mv / 1000.0:0.00} V)" : "")}{(_charging ? ", charging" : "")}",
         _ when _percent != null => $"Asleep or off. Last {_percent}% at {_lastSuccess:t}",
         ReadStatus.MouseUnreachable => "No mouse responding. Move it to wake it, or check it's supported.",
         _ => "No Logitech receiver or wired mouse found",
