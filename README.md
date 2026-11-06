@@ -75,7 +75,7 @@ keep it visible.
 | Colour | Meaning |
 | ------ | ------- |
 | White or black (follows the taskbar theme) | Normal |
-| Green | Charging |
+| Green | Charging, with a lightning bolt in the widget's battery. Mice that only report voltage show `+` in the tray and `CHG` on the widget until unplugged |
 | Amber | At or below the alert threshold (default 20%) |
 | Red | At or below half the alert threshold |
 | Grey | Mouse asleep or off, showing the last known value (`?` if there isn't one) |
@@ -93,9 +93,11 @@ a mouse or trackball in receiver slots 1-6, or connected directly by cable, and 
 battery feature it supports.
 
 Percentages from voltage-reporting mice come from a median of the last five readings and one
-discharge curve (`src/Battery.cs`), so they're estimates and can vary by model. Expect them to
-be less accurate while charging. The curve's values come from the
-[Solaar](https://github.com/pwr-Solaar/Solaar) project.
+discharge curve (`src/Battery.cs`), so they're estimates and can vary by model. The curve's
+values come from the [Solaar](https://github.com/pwr-Solaar/Solaar) project.
+
+The charger raises the voltage these mice report, so no percentage is shown while they charge.
+Expect the first readings after unplugging to run high until the voltage settles.
 
 Settings are stored in `%APPDATA%\MouseBat\settings.json`.
 

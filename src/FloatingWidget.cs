@@ -16,6 +16,12 @@ public sealed class FloatingWidget : Form
     private const int WsExTopmost = 0x00000008, WsExToolWindow = 0x00000080, WsExNoActivate = 0x08000000;
     private const int DwmwaWindowCornerPreference = 33, DwmwcpRound = 2;
 
+    // Logical pixels from the centre of the battery.
+    private static readonly PointF[] BoltShape =
+    [
+        new(1, -5), new(-3, 1), new(-0.5f, 1), new(-1, 5), new(3, -1), new(0.5f, -1),
+    ];
+
     private readonly Settings _settings;
     private readonly ToolTip _toolTip = new() { ShowAlways = true };
 
@@ -155,7 +161,16 @@ public sealed class FloatingWidget : Form
             graphics.DrawRectangle(pen, body.X, body.Y, body.Width - 1, body.Height - 1);
             graphics.FillRectangle(brush, body.Right, body.Y + (body.Height - Px(6)) / 2, Px(2), Px(6));
 
-            if (_percent is { } percent && percent > 0)
+            if (_tone == IconTone.Charging)
+            {
+                // Replaces the fill, which is the same colour and would hide it.
+                float centerX = body.X + body.Width / 2f, centerY = body.Y + body.Height / 2f;
+                PointF[] bolt = [.. BoltShape.Select(p => new PointF(centerX + p.X * scale, centerY + p.Y * scale))];
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.FillPolygon(brush, bolt);
+                graphics.SmoothingMode = SmoothingMode.None;
+            }
+            else if (_percent is { } percent && percent > 0)
             {
                 int inset = stroke + Math.Max(1, Px(1));
                 int maxWidth = body.Width - inset * 2;

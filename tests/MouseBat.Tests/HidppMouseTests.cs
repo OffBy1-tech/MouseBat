@@ -109,6 +109,7 @@ public class HidppMouseTests
 
         Assert.Equal("Cabled", reading!.DeviceName);
         Assert.True(reading.Charging);
+        Assert.Null(reading.Percent);
     }
 
     [Fact]
