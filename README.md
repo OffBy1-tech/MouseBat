@@ -55,6 +55,22 @@ includes a SHA-256 checksum so you can verify the download.
 If "Start with Windows" is on, it points at the exe's current location, so turn it off and on
 again after moving the exe.
 
+## Updates
+
+Once a day, starting 30 seconds after launch, MouseBat asks GitHub whether there's a newer
+release. If there is, you get a notification and an "Update to vX" item in the right-click menu.
+Nothing installs until you click it. MouseBat then downloads the new exe, checks it against the
+release's SHA-256 checksum, makes sure it can start on your PC, swaps it in and restarts. If any
+of that fails, your current version stays in place and the download page opens instead.
+
+These GitHub requests are the only internet connections MouseBat makes, and they send nothing
+about you or your mouse. Turn off "Check for updates daily" in the menu to stop them. "Check for
+updates now" still works when you ask.
+
+The checksum catches a damaged download, but it comes from the same release as the exe, and the
+exe isn't code-signed. It wouldn't protect you if the GitHub account behind this project were
+compromised, which is why updates wait for your click.
+
 ## Show the number in the tray
 
 Windows 11 hides new tray icons. To keep it visible, go to Settings > Personalization >
@@ -81,7 +97,7 @@ keep it visible.
 | Grey | Mouse asleep or off, showing the last known value (`?` if there isn't one) |
 
 Hover over the icon for the mouse's name and status. Right-click for refresh, the alert
-threshold, a test notification, Start with Windows, and exit.
+threshold, a test notification, Start with Windows, update options, and exit.
 
 You get one notification at the threshold and one at half of it. They re-arm after the mouse
 charges or recovers by 5 points. Windows Do Not Disturb can hide them.
