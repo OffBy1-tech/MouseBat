@@ -9,6 +9,7 @@ public sealed class Settings
     public bool WidgetVisible { get; set; } = true;
     public int? WidgetX { get; set; }
     public int? WidgetY { get; set; }
+    public bool CheckForUpdates { get; set; } = true;
 
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MouseBat", "settings.json");

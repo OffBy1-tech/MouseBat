@@ -21,6 +21,7 @@
   <ItemGroup>
     <Compile Include="..\..\src\Battery.cs" Link="src\Battery.cs" />
     <Compile Include="..\..\src\HidppMouse.cs" Link="src\HidppMouse.cs" />
+    <Compile Include="..\..\src\Updates.cs" Link="src\Updates.cs" />
   </ItemGroup>
 
 </Project>

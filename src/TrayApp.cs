@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Win32;
 
 namespace MouseBat;
@@ -5,6 +6,7 @@ namespace MouseBat;
 public sealed class TrayApp : ApplicationContext
 {
     private const int MaxTooltipLength = 127; // NotifyIcon throws above this.
+    private const int FirstUpdateCheckDelayMs = 30_000, UpdateCheckIntervalMs = 24 * 60 * 60 * 1000;
     private static readonly int[] ThresholdChoices = [10, 15, 20, 25, 30];
 
     private readonly Settings _settings = Settings.Load();
@@ -14,7 +16,9 @@ public sealed class TrayApp : ApplicationContext
 
     private readonly NotifyIcon _tray = new();
     private readonly ToolStripMenuItem _statusItem = new() { Enabled = false };
+    private readonly ToolStripMenuItem _updateItem = new() { Visible = false };
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 60_000 };
+    private readonly System.Windows.Forms.Timer _updateTimer = new() { Interval = FirstUpdateCheckDelayMs };
 
     private ReadStatus _status = ReadStatus.NoReceiver;
     private string _mouseName = "Mouse";
@@ -24,8 +28,10 @@ public sealed class TrayApp : ApplicationContext
     private DateTime _lastSuccess;
     private bool _polling;
     private Icon? _currentIcon;
+    private UpdateRelease? _availableUpdate;
+    private Version? _announcedUpdate;
 
-    public TrayApp()
+    public TrayApp(bool justUpdated)
     {
         _alert = new LowBatteryAlert(_settings.LowThreshold);
 
@@ -43,6 +49,19 @@ public sealed class TrayApp : ApplicationContext
         _timer.Tick += async (_, _) => await PollAsync();
         _timer.Start();
         _ = PollAsync();
+
+        _updateItem.Click += async (_, _) => await InstallUpdateAsync();
+        _updateTimer.Tick += async (_, _) =>
+        {
+            _updateTimer.Interval = UpdateCheckIntervalMs;
+            await CheckForUpdatesAsync(announceResult: false);
+        };
+        if (_settings.CheckForUpdates) _updateTimer.Start();
+
+        // The previous copy may take a moment to exit and release its file.
+        _ = Task.Delay(TimeSpan.FromSeconds(5)).ContinueWith(_ => Updater.CleanUp(), TaskScheduler.Default);
+
+        if (justUpdated) _tray.ShowBalloonTip(5000, "MouseBat updated", $"Now running version {Updater.CurrentVersion}.", ToolTipIcon.Info);
     }
 
     private ContextMenuStrip BuildMenu()
@@ -50,6 +69,7 @@ public sealed class TrayApp : ApplicationContext
         var menu = new ContextMenuStrip();
         menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_updateItem);
         menu.Items.Add("Refresh now", null, async (_, _) => await PollAsync());
 
         var widgetItem = new ToolStripMenuItem("Show floating widget") { Checked = _settings.WidgetVisible, CheckOnClick = true };
@@ -80,6 +100,17 @@ public sealed class TrayApp : ApplicationContext
         var autostartItem = new ToolStripMenuItem("Start with Windows") { Checked = Autostart.IsEnabled, CheckOnClick = true };
         autostartItem.Click += (_, _) => Autostart.IsEnabled = autostartItem.Checked;
         menu.Items.Add(autostartItem);
+
+        menu.Items.Add("Check for updates now", null, async (_, _) => await CheckForUpdatesAsync(announceResult: true));
+
+        var autoUpdateItem = new ToolStripMenuItem("Check for updates daily") { Checked = _settings.CheckForUpdates, CheckOnClick = true };
+        autoUpdateItem.Click += (_, _) =>
+        {
+            _settings.CheckForUpdates = autoUpdateItem.Checked;
+            _settings.Save();
+            _updateTimer.Enabled = autoUpdateItem.Checked;
+        };
+        menu.Items.Add(autoUpdateItem);
 
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitThread());
@@ -126,6 +157,55 @@ public sealed class TrayApp : ApplicationContext
         finally
         {
             _polling = false;
+        }
+    }
+
+    private async Task CheckForUpdatesAsync(bool announceResult)
+    {
+        UpdateRelease? release;
+        try
+        {
+            release = await Updater.CheckAsync();
+        }
+        catch (UpdateException)
+        {
+            if (announceResult) _tray.ShowBalloonTip(5000, "MouseBat", "Couldn't check for updates.", ToolTipIcon.Warning);
+            return;
+        }
+
+        _availableUpdate = release;
+        _updateItem.Visible = release != null;
+        if (release == null)
+        {
+            if (announceResult) _tray.ShowBalloonTip(5000, "MouseBat", $"You're on the latest version ({Updater.CurrentVersion}).", ToolTipIcon.Info);
+            return;
+        }
+
+        _updateItem.Text = $"Update to {release.Tag}";
+        if (announceResult || release.Version != _announcedUpdate)
+        {
+            _announcedUpdate = release.Version;
+            _tray.ShowBalloonTip(10_000, "MouseBat update available", $"{release.Tag} is ready. Right-click the icon to update.", ToolTipIcon.Info);
+        }
+    }
+
+    private async Task InstallUpdateAsync()
+    {
+        if (_availableUpdate is not { } release) return;
+
+        _updateItem.Enabled = false;
+        _updateItem.Text = "Updating...";
+        try
+        {
+            await Updater.InstallAsync(release);
+            ExitThread();
+        }
+        catch (UpdateException)
+        {
+            _updateItem.Enabled = true;
+            _updateItem.Text = $"Update to {release.Tag}";
+            _tray.ShowBalloonTip(10_000, "MouseBat", "Couldn't update automatically, so the download page is open instead.", ToolTipIcon.Warning);
+            Process.Start(new ProcessStartInfo(release.PageUrl) { UseShellExecute = true })?.Dispose();
         }
     }
 
@@ -198,6 +278,7 @@ public sealed class TrayApp : ApplicationContext
         {
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             _timer.Dispose();
+            _updateTimer.Dispose();
             _tray.Visible = false;
             _tray.Dispose();
             _widget.Dispose();
